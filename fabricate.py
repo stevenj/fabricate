@@ -29,7 +29,7 @@ __version__ = '1.27'
 deps_version = 2
 
 import atexit
-import optparse
+import argparse
 import os
 import platform
 import re
@@ -1455,32 +1455,40 @@ _usage = '[options] build script functions to run'
 
 def parse_options(usage=_usage, extra_options=None, command_line=None):
     """ Parse command line options and return (parser, options, args). """
-    parser = optparse.OptionParser(usage='Usage: %prog '+usage,
-                                   version='%prog '+__version__)
-    parser.disable_interspersed_args()
-    parser.add_option('-t', '--time', action='store_true',
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--version', action='version', version='%(prog)s '+__version__)
+    parser.add_argument('-t', '--time', action='store_true',
                       help='use file modification times instead of MD5 sums')
-    parser.add_option('-d', '--dir', action='append',
+    parser.add_argument('-d', '--dir', action='append',
                       help='add DIR to list of relevant directories')
-    parser.add_option('-c', '--clean', action='store_true',
+    parser.add_argument('-c', '--clean', action='store_true',
                       help='autoclean build outputs before running')
-    parser.add_option('-q', '--quiet', action='store_true',
+    parser.add_argument('-q', '--quiet', action='store_true',
                       help="don't echo commands, only print errors")
-    parser.add_option('-D', '--debug', action='store_true',
+    parser.add_argument('-D', '--debug', action='store_true',
                       help="show debug info (why commands are rebuilt)")
-    parser.add_option('-k', '--keep', action='store_true',
+    parser.add_argument('-k', '--keep', action='store_true',
                       help='keep temporary strace output files')
-    parser.add_option('-j', '--jobs', type='int',
+    parser.add_argument('-j', '--jobs', type=int,
                       help='maximum number of parallel jobs')
+    parser.add_argument('actions', nargs=argparse.REMAINDER,
+                      help="The build actions to perform, such as 'clean', 'debug', 'release'")
+
     if extra_options:
+        print(extra_options)
         # add any user-specified options passed in via main()
         for option in extra_options:
-            parser.add_option(option)
+            name_or_flags = option['name_or_flags']
+            del option['name_or_flags']
+            parser.add_argument(*name_or_flags,**option)
+
     if command_line is not None:
-        options, args = parser.parse_args(command_line)
+        options = parser.parse_args(command_line)
     else:
-        options, args = parser.parse_args()
-    _parsed_options = (parser, options, args)
+        options = parser.parse_args()
+
+    # Returns (parser, options, actions)
+    _parsed_options = (parser, options, options.actions)
     return _parsed_options
 
 def fabricate_version(min=None, max=None):
@@ -1515,7 +1523,7 @@ def main(globals_dict=None, build_dir=None, extra_options=None, builder=None,
         and modify the command line passed to the build script.
         "default" is the default user script function to call, None = 'build'
         "extra_options" is an optional list of options created with
-        optparse.make_option(). The pseudo-global variable main.options
+        argparse.add_argument(). The pseudo-global variable main.options
         is set to the parsed options list.
         "kwargs" is any other keyword arguments to pass to the builder """
     global default_builder, default_command, _pool
