@@ -1475,7 +1475,6 @@ def parse_options(usage=_usage, extra_options=None, command_line=None):
                       help="The build actions to perform, such as 'clean', 'debug', 'release'")
 
     if extra_options:
-        print(extra_options)
         # add any user-specified options passed in via main()
         for option in extra_options:
             name_or_flags = option['name_or_flags']
