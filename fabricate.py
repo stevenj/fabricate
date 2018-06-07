@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """Build tool that finds dependencies automatically for any language.
 
@@ -18,12 +18,14 @@ To get help on fabricate functions:
     from fabricate import *
     help(function)
 
+This version ONLY runs on Python 3.
+
 """
 
-from __future__ import with_statement, print_function, unicode_literals
+# from __future__ import with_statement, print_function, unicode_literals
 
 # fabricate version number
-__version__ = '1.29.3'
+__version__ = '3.00.1'
 
 # if version of .deps file has changed, we know to not use it
 deps_version = 2
@@ -41,27 +43,16 @@ import tempfile
 import time
 import threading # NB uses old camelCase names for backward compatibility
 import traceback
-# multiprocessing module only exists on Python >= 2.6
-try:
-    import multiprocessing
-except ImportError:
-    class MultiprocessingModule(object):
-        def __getattr__(self, name):
-            raise NotImplementedError("multiprocessing module not available, can't do parallel builds")
-    multiprocessing = MultiprocessingModule()
+import multiprocessing
+
+PY_MAJOR_REQUIRED = 3
+PY_MINOR_REQUIRED = 4
 
 # compatibility            
-PY3 = sys.version_info[0] == 3
-if PY3:
-    string_types = str
-    threading_condition = threading.Condition
-else:
-    string_types = basestring
-
-try:
-    threading_condition = threading._Condition
-except ImportError:
-    threading_condition = threading.Condition
+if (sys.version_info.major != PY_MAJOR_REQUIRED) or (sys.version_info.minor < PY_MINOR_REQUIRED):
+    sys.stderr.write(("fabricate REQUIRES Python %d.%d. Your version = %s ") % 
+                     (PY_MAJOR_REQUIRED, PY_MINOR_REQUIRED, sys.version))
+    sys.exit()
 
 # so you can do "from fabricate import *" to simplify your build script
 __all__ = ['setup', 'run', 'autoclean', 'main', 'shell', 'fabricate_version',
@@ -135,7 +126,7 @@ def args_to_list(args):
         if isinstance(arg, (list, tuple)):
             arglist.extend(args_to_list(arg))
         else:
-            if not isinstance(arg, string_types):
+            if not isinstance(arg, str):
                 arg = str(arg)
             arglist.append(arg)
     return arglist
@@ -248,6 +239,9 @@ class RunnerUnsupportedException(Exception):
     pass
 
 class Runner(object):
+    def __init__(self, builder):
+        self._builder = builder
+
     def __call__(self, *args, **kwargs):
         """ Run command and return (dependencies, outputs), where
             dependencies is a list of the filenames of files that the
@@ -265,7 +259,7 @@ class Runner(object):
 
 class AtimesRunner(Runner):
     def __init__(self, builder):
-        self._builder = builder
+        super().__init__(builder)
         self.atimes = AtimesRunner.has_atimes(self._builder.dirs)
         if self.atimes == 0:
             raise RunnerUnsupportedException(
@@ -504,10 +498,10 @@ class StraceRunner(Runner):
     keep_temps = False
 
     def __init__(self, builder, build_dir=None):
+        super().__init__(builder)
         self.strace_system_calls = StraceRunner.get_strace_system_calls()
         if self.strace_system_calls is None:
             raise RunnerUnsupportedException('strace is not available')
-        self._builder = builder
         self.temp_count = 0
         self.build_dir = os.path.abspath(build_dir or os.getcwd())
 
@@ -752,7 +746,7 @@ class StraceRunner(Runner):
 
 class AlwaysRunner(Runner):
     def __init__(self, builder):
-        pass
+        super().__init__(builder)
 
     def __call__(self, *args, **kwargs):
         """ Runner that always runs given command, used as a backup in case
@@ -766,7 +760,7 @@ class SmartRunner(Runner):
     """ Smart command runner that uses StraceRunner if it can,
         otherwise AtimesRunner if available, otherwise AlwaysRunner. """
     def __init__(self, builder):
-        self._builder = builder
+        super().__init__(builder)
         try:
             self._runner = StraceRunner(self._builder)
         except RunnerUnsupportedException:
@@ -955,8 +949,8 @@ def _results_handler( builder, delay=0.01):
                             r.results = False
                             _groups.set_ok(a.do.group, False)
                             _groups.dec_count(a.do.group)
-                    elif isinstance(a.do, threading_condition):
-                        # is this only for threading_condition in after()?
+                    elif isinstance(a.do, threading.Condition):
+                        # is this only for threading.Condition in after()?
                         a.do.acquire()
                         # only mark as done if there is no error
                         a.done = no_error
@@ -1196,7 +1190,7 @@ class Builder(object):
 
             This function is for compatiblity with memoize.py and is
             deprecated. Use run() instead. """
-        if isinstance(command, string_types):
+        if isinstance(command, str):
             args = shlex.split(command)
         else:
             args = args_to_list(command)
@@ -1342,7 +1336,7 @@ class Builder(object):
         try:
             self.runner = self._runner_map[runner](self)
         except KeyError:
-            if isinstance(runner, string_types):
+            if isinstance(runner, str):
                 # For backwards compatibility, allow runner to be the
                 # name of a method in a derived class:
                 self.runner = getattr(self, runner)
@@ -1492,9 +1486,9 @@ def parse_options(usage=_usage, extra_options=None, command_line=None):
     if command_line is not None:
         options = parser.parse_args(command_line)
     else:
-        options, args = parser.parse_args()
+        options = parser.parse_args()
     global _parsed_options
-    _parsed_options = (parser, options, args)
+    _parsed_options = (parser, options, options.actions)
     return _parsed_options
 
 def fabricate_version(min=None, max=None):
