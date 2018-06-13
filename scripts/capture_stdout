@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+# Capture the output of a command, when the output goes to stdout and direct to a file.
+
+import os,sys,subprocess
+
+def capture_stdout(command, outputname, args):
+    output = subprocess.check_output(command + ' ' + ' '.join(args) + " ; exit 0;",
+                                     stderr=subprocess.STDOUT, shell=True, universal_newlines=True)
+
+    outfile = open(outputname, 'w')
+    outfile.write(output)
+
+def usage(argv):
+    need_usage = False
+    if argv is None:
+        argv = sys.argv
+
+    if ("-h" in argv[1:]) or ("--help" in argv[1:]) or (len(argv) < 3) :
+        need_usage = True
+    else:
+        try:
+            command      = argv[1]
+            outputname   = argv[2]
+            args         = argv[3:]
+        except:
+            need_usage = True
+
+    if need_usage:
+        print ("USAGE: %s <command> <outputname> ... <arguments to command" % argv[0])
+        sys.exit(2)
+
+    return (command, outputname, args)
+
+def main(argv=None):
+    args = usage(argv)
+    capture_stdout(args[0],args[1],args[2])
+
+if __name__ == "__main__":
+   sys.exit(main())

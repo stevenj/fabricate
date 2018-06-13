@@ -1,0 +1,62 @@
+#!/usr/bin/env python2
+
+# Stand-alone Bootloader Load address checker.
+# Determines the optimal Bootloader Load address and checks if it is
+# being used or not.
+# Parameters:
+#   chk_bootloader.py <bootloader elf file> <current load address> <max flash size> <page size>
+
+import os,sys,subprocess
+
+def chk_bootloader(filename, load_address, max_flash, page_size):
+    size = subprocess.check_output("avr-size "+filename+" ; exit 0;",
+                               stderr=subprocess.STDOUT, shell=True)
+    size = int(size.split('\n')[1].split()[0])
+    bestaddr = ((max_flash-size)/page_size)*page_size
+
+    print "TARGET %s ::--" % filename
+    if load_address + size > max_flash:
+        print "\t\t :: ERROR: FLASH SIZE OF %dK EXCEEDED." % (max_flash/1024)
+        print "\t\t :: \t Either Reduce size of Bootloader by %d bytes." % ((load_address+size)-max_flash)
+        print "\t\t :: \t OR change BOOTLOADER_ADDRESS to 0x%04X." % (bestaddr)
+        sys.exit(3)
+
+    if bestaddr == load_address:
+        print "\t\t :: BOOTLOADER_ADDRESS of 0x%04X ALREADY OPTIMAL." % (load_address)
+    else:
+        print "\t\t :: BOOTLOADER_ADDRESS should be 0x%04X not 0x%04X -- WARNING %0d FLASH BYTES WASTED." % (bestaddr, load_address, bestaddr-load_address)
+
+    print "\t\t :: %d BYTES AVAILABLE FOR APPLICATION" % (bestaddr)
+    print "\t\t :: BOOTLOADER CONSUMES %d PAGES (%0.2f%%) OF FLASH" % ((max_flash-load_address)/page_size,(100.0/float(max_flash))*float(max_flash-load_address))
+    print "\t\t :: %d BYTES LEFT IN BOOTLOADER AREA FOR BOOTLOADER GROWTH" % ((max_flash-load_address) - size)
+
+def usage(argv):
+    need_usage = False
+    if argv is None:
+        argv = sys.argv
+    if ("-h" in argv[1:]) or ("--help" in argv[1:]) or (len(argv) < 5) :
+        need_usage = True
+    else:
+        try:
+            filename     = argv[1]
+            if not os.path.isfile(filename):
+                print "ERROR: File %s NOT FOUND" % filename
+                need_usage = True
+            load_address = int(argv[2])
+            max_flash    = int(argv[3])
+            page_size    = int(argv[4])
+        except:
+            need_usage = True
+
+    if need_usage:
+        print "USAGE: %s <bootloader elf file> <current load address> <max flash size> <page size>" % argv[0]
+        sys.exit(2)
+
+    return (filename, load_address, max_flash, page_size)
+
+def main(argv=None):
+    args = usage(argv)
+    chk_bootloader(args[0],args[1],args[2],args[3])
+
+if __name__ == "__main__":
+   sys.exit(main())
