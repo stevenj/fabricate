@@ -46,7 +46,7 @@ import traceback
 import multiprocessing
 
 PY_MAJOR_REQUIRED = 3
-PY_MINOR_REQUIRED = 4
+PY_MINOR_REQUIRED = 5
 
 # compatibility            
 if (sys.version_info.major != PY_MAJOR_REQUIRED) or (sys.version_info.minor < PY_MINOR_REQUIRED):

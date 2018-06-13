@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-from fabricate  import *
-from util import *
+from .fabricate import *
+from .util      import *
 
 import os
 import platform
 
 # Generic Builder for GCC and G++
-def gcc(build, section, module, tool, arch, core, src, debug=False):
-    gcc_opt = get_gcc_opt(build,section,module,tool,arch,core,src,debug)
-    gcc_opt.extend(get_gcc_opt(build,section,module,'COMMON',arch,core,src,debug))
+def gcc(build, section, module, tool, arch, core, src, buildtype):
+    gcc_opt = get_gcc_opt(build,section,module,tool,arch,core,src,buildtype)
 
     # Get Includes
-    includes = get_includes(build,section,module,debug)
-    sysincludes = get_includes(build,section,module,system=True,debug=debug)
+    includes = get_includes(build,section,module,buildtype)
+    sysincludes = get_includes(build,section,module,system=True,buildtype=buildtype)
 
     # Add -I to each include path.
     inc_opt = [['-I',inc] for inc in includes]
@@ -47,22 +46,22 @@ def gcc(build, section, module, tool, arch, core, src, debug=False):
         group=module,
         after=after_modules)
 
-def ar(build,section,module, debug=False):
+def ar(build,section,module, buildtype):
     base_dir = get_base_dir(build,section,module)
     arch     = build[section][module]['ARCH']
     core     = build[section][module]['CORE']
 
-    print "Linking Library %s of %s" % ( build[section][module]['LIBRARY'],
-                                         build[section][module]['VERSION'] )
+    print ("Archiving Library %s of %s" % ( build[section][module]['LIBRARY'],
+                                         build[section][module]['VERSION'] ))
 
     objects = [get_destination_file(
-                  get_src_tuple(build,section,module,s,debug),
+                  get_src_tuple(build,section,module,s,buildtype),
                   new_ext='.o') for s in build[section][module]['SRC']]
 
     library = get_destination_file(
                   get_src_tuple(build,
                                 build[section][module]['LIBRARY'],
-                                module,debug,section=section))
+                                module,buildtype,section=section))
 
     output_dir = os.path.dirname(library)
 
@@ -75,19 +74,22 @@ def ar(build,section,module, debug=False):
         'rcs', library, objects,
         group=build[section][module]['LIBRARY'], after=(module))
 
-def ld(build, section, module, debug):
+def ld(build, section, module, buildtype):
+    def add_ldflags(ldflags):
+        ext_ldflags = []
+        for ldflag in ldflags:
+            ext_ldflags.extend(["-Wl,"+ldflag])
+        return ext_ldflags
+
     base_dir = get_base_dir(build,section,module)
     arch     = build[section][module]['ARCH']
     core     = build[section][module]['CORE']
 
-    print "Linking Application %s of %s" % ( build[section][module]['APP'],
-                                             build[section][module]['VERSION'] )
+    print ("Linking Application %s of %s" % ( build[section][module]['APP'],
+                                             build[section][module]['VERSION'] ))
 
-    gcc_opt = get_gcc_opt(build,section,module,'GCC',arch,core,(""),debug)
-
-    if 'LDFLAGS' in build[section][module]:
-        for ldflag in build[section][module]['LDFLAGS']:
-            gcc_opt.extend(["-Wl,"+ldflag])
+    gcc_opt =  get_gcc_opt(build,section,module,'LD',arch,core,(""),buildtype)
+    gcc_opt += add_ldflags(get_ld_opt(build,section,module,'LD',arch,core,(""),buildtype))
 
     searchpaths = []
     if 'LINK' in build[section][module]:
@@ -97,25 +99,22 @@ def ld(build, section, module, debug):
 
     searchpaths = [["-Wl,-L,"+path] for path in searchpaths]
 
-    for ldflag in build['OPTS']['GCC'][arch]['LDFLAGS']:
-        gcc_opt.extend(["-Wl,"+ldflag])
-
     # Get Objects to link
     objects = [get_destination_file(
-                  get_src_tuple(build,section,module,s,debug),
+                  get_src_tuple(build,section,module,s,buildtype),
                   new_ext='.o') for s in build[section][module]['SRC']]
 
     output_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['APP'],
-                                    debug))
+                                    buildtype))
 
     mapfile = None
     if 'MAP' in build[section][module]:
       mapfile = "-Wl,-Map="+get_destination_file(
                                 get_src_tuple(build,section,module,
                                     build[section][module]['MAP'],
-                                    debug))
+                                    buildtype))
 
 
     # run GCC - to link
@@ -128,33 +127,12 @@ def ld(build, section, module, debug):
         group=module+'_link',
         after=(module))
 
-def execute_make_script(build,section,module,debug):
-    cmd_cnt = 0;
 
-    commands = build[section][module]['MAKE']
-
-    if debug:
-        if ('MAKE_DEBUG' in build[section][module]):
-            commands = build[section][module]['MAKE_DEBUG']
-        else:
-            commands = []
-
-    for cmd in commands:
-        cmd_cnt += 1
-        rundir = get_base_dir(build,module,section)
-        # Run each command in turn, preserving order on parallel builds.
-        run("bash", "-c", "cd "+rundir+"; "+" ".join(cmd),
-                group='MAKE'+module+str(cmd_cnt),
-                after=(module+str(cmd_cnt-1)) if cmd_cnt > 1 else None
-            )
-
-    return cmd_cnt
-
-def src_build(build,section,module,debug):
+def src_build(build,section,module,buildtype):
     # Build a bunch of source files, based on their extensions.
     for src in build[section][module]['SRC']:
         clean_src = src
-        src = get_src_tuple(build,section,module,clean_src,debug)
+        src = get_src_tuple(build,section,module,clean_src,buildtype)
         tool = get_tool(build, src)
 
         if ((tool == 'GCC') or (tool == 'GXX') or (tool == 'GAS')):
@@ -165,28 +143,28 @@ def src_build(build,section,module,debug):
                 build[section][module]['ARCH'],
                 build[section][module]['CORE'],
                 src,
-                debug)
+                buildtype)
         else:
-            print "%s ERROR: Don't know how to compile : %s from %s using %s" % (section, src, module, tool)
+            print ("%s ERROR: Don't know how to compile : %s from %s using %s" % (section, src, module, tool))
             exit(1)
 
-def gen_hex(build,section,module,debug):
+def gen_hex(build,section,module,buildtype):
     base_dir = get_base_dir(build,section,module)
     arch     = build[section][module]['ARCH']
     core     = build[section][module]['CORE']
 
-    print "Making .hex of Application %s/%s" % ( build[section][module]['APP'],
-                                             build[section][module]['VERSION'] )
+    print ("Making .hex of Application %s/%s" % ( build[section][module]['APP'],
+                                             build[section][module]['VERSION'] ))
 
     app_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['APP'],
-                                    debug))
+                                    buildtype))
 
     hex_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['HEX'],
-                                    debug))
+                                    buildtype))
 
     # run obj-copy - to generate .hex file
     run(join_path(build['TOOLS']['PATH'][arch],build['TOOLS']['OBJ-COPY'][arch]),
@@ -195,25 +173,25 @@ def gen_hex(build,section,module,debug):
         group=module+'_hex',
         after=(module+'_link'))
 
-def gen_dump(build,section,module,debug):
+def gen_dump(build,section,module,buildtype):
     base_dir = get_base_dir(build,section,module)
     arch     = build[section][module]['ARCH']
     core     = build[section][module]['CORE']
 
-    print "Making .dump of Application %s/%s" % ( build[section][module]['APP'],
-                                             build[section][module]['VERSION'] )
+    print ("Making .dump of Application %s/%s" % ( build[section][module]['APP'],
+                                             build[section][module]['VERSION'] ))
 
     app_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['APP'],
-                                    debug))
+                                    buildtype))
 
     dump_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['DUMP'],
-                                    debug))
+                                    buildtype))
 
-    # run obj-copy - to generate .hex file
+    # run obj-dump - to generate dump of the compiled code
     run(join_path(build['TOOLS']['PATH']['SCRIPT'],'capture_stdout'),
         join_path(build['TOOLS']['PATH'][arch],build['TOOLS']['OBJ-DUMP'][arch]),
         dump_file,
@@ -222,23 +200,23 @@ def gen_dump(build,section,module,debug):
         group=module+'_dump',
         after=(module+'_link'))
 
-def gen_hex2c(build,section,module,debug):
+def gen_hex2c(build,section,module,buildtype):
     base_dir = get_base_dir(build,section,module)
     arch     = build[section][module]['ARCH']
     core     = build[section][module]['CORE']
 
-    print "Making .c of Application %s/%s" % ( build[section][module]['APP'],
-                                             build[section][module]['VERSION'] )
+    print ("Making .c of Application %s/%s" % ( build[section][module]['APP'],
+                                             build[section][module]['VERSION'] ))
 
     hex_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['HEX'],
-                                    debug))
+                                    buildtype)) 
 
     c_file = get_destination_file(
                       get_src_tuple(build,section,module,
                                     build[section][module]['HEX2C'],
-                                    debug))
+                                    buildtype))
 
     # run hex2c - to generate .x file
     run(join_path(build['TOOLS']['PATH']['SCRIPT'],'hex2c'),
@@ -250,7 +228,7 @@ def gen_hex2c(build,section,module,debug):
 
 
 
-def module_maker(build,section='SRC',debug=False):
+def module_maker(build,section='SRC', buildtype = None):
 
     # Dictionaries are inherently unsorted.
     # To ensure sources are built in a particular order put an
@@ -267,43 +245,32 @@ def module_maker(build,section='SRC',debug=False):
         cmd_cnt = 0;
 
         if (module not in build['SKIP']):
-            # Then run any external make commands
-            if ('MAKE' in build[section][module]):
-                if ('VCS' in build[section][module]):
-                    after('VCS'+module)
-                cmd_cnt = execute_make_script(build,section,module,debug)
 
+            src_build(build,section,module,buildtype)
+            
+            after()
 
-            # Then run make type directly from source.
-            if ('SRC' in build[section][module]) :
-                if ('VCS' in build[section][module]):
-                    after('VCS'+module)
-                if ('MAKE' in build[section][module]):
-                    after('MAKE'+module+str(cmd_cnt))
-
-                src_build(build,section,module,debug)
-
-                # Source files need to be linked.
-                #   Depending on the kind of source, link as appropriate.
-                #   Each option is Mutually Exclusive
-                if ('LIBRARY' in build[section][module]) :
-                    ar(build,module,debug,section)
-                elif ('MODULE' in build[section][module]) :
-                    """
-                    Modules are linked with their APP!
-                    NOTHING TO DO NOW.
-                    """
-                elif ('APP' in build[section][module]) :
-                    ld(build,section,module,debug)
+            # Source files need to be linked.
+            #   Depending on the kind of source, link as appropriate.
+            #   Each option is Mutually Exclusive
+            if ('LIBRARY' in build[section][module]) :
+                ar(build,module,buildtype,section)
+            elif ('MODULE' in build[section][module]) :
+                """
+                Modules are linked with their APP!
+                NOTHING TO DO NOW.
+                """
+            elif ('APP' in build[section][module]) :
+                ld(build,section,module,buildtype)
 
             # generate any .hex files as required.
             if ('HEX' in build[section][module]):
-                gen_hex(build,section,module,debug)
+                gen_hex(build,section,module,buildtype)
 
             # generate .c files as required.
             if ('HEX2C' in build[section][module]):
-                gen_hex2c(build,section,module,debug)
+                gen_hex2c(build,section,module,buildtype)
 
             # generate .dump files as required.
             if ('DUMP' in build[section][module]):
-                gen_dump(build,section,module,debug)
+                gen_dump(build,section,module,buildtype)

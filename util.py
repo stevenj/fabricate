@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """Utility opertations for the Fabricate build tool.
 
@@ -16,6 +16,8 @@ import sys
 import subprocess
 import atexit
 import re
+import glob
+from pathlib import Path
 
 from fabricate import *
 
@@ -84,7 +86,7 @@ def _mkdir_recursive(path):
     # Make a path, use mkdir if we can, so that clean can remove it.
     sub_path = os.path.dirname(path)
 
-    if (sub_path <> "") and (not os.path.exists(sub_path)):
+    if (sub_path != "") and (not os.path.exists(sub_path)):
         _mkdir_recursive(sub_path)
 
     if not os.path.exists(path):
@@ -123,15 +125,12 @@ def replace_ext(fname,ext):
 def join_path(*args):
     return os.path.normpath(os.path.join(*args))
 
-def get_build_dir(build,debug):
-    if debug:
-        return build['DEBUG_DIR']
-    else:
-        return build['BUILD_DIR']
+def get_build_dir(build,buildtype):
+    return build['BUILDS'][buildtype]
 
 def get_destination_file(src,new_ext=None,just_dir=False):
-    strip = src[2];
-    dest  = src[0];
+    strip = src[2]
+    dest  = src[0]
 
     if just_dir:
         dest = os.path.dirname(dest)
@@ -156,22 +155,19 @@ def get_base_dir(build,section,module):
 
     return base_dir
 
-def get_src_tuple(build,section,module,src,debug=False):
+def get_src_tuple(build,section,module,src,buildtype):
     # The src tuple is:
     # ( "Path to source file",
     #   "Path to locate destination built file",
-    #   <number of elements to remove from from of source when adding to destination> )
+    #   <number of elements to remove from source when adding to destination> )
     if not isinstance(src, (tuple)):
         src = (src,
-                join_path(get_build_dir(build,debug),
+                join_path(get_build_dir(build,buildtype),
                           build[section][module]['ARCH'],
                           build[section][module]['CORE']),
                0)
-    elif debug:
-        src = (src[0],join_path(get_build_dir(build,debug),src[1]),src[2])
 
     base_dir = get_base_dir(build,section,module)
-
     src = (join_path(base_dir,src[0]),src[1],src[2])
     return src
 
@@ -184,12 +180,12 @@ def get_tool(build,path):
     return "Unknown"
 
 # Generic Include Path Collector for GCC and G++
-def get_includes(build,section,module,include_uses=True,system=False,debug=False):
+def get_includes(build,section,module,include_uses=True,system=False,buildtype=None):
     base_dir = get_base_dir(build,section,module)
     incs = []
     if system:
         if 'SYSINCLUDE' in build['SOURCE'][module]:
-            incs = build['SOURRCE'][module]['SYSINCLUDE']
+            incs = build['SOURCE'][module]['SYSINCLUDE']
     else:
         if 'INCLUDE' in build['SOURCE'][module]:
             incs = build['SOURCE'][module]['INCLUDE']
@@ -198,45 +194,104 @@ def get_includes(build,section,module,include_uses=True,system=False,debug=False
 
     if include_uses and ('USES' in build['SOURCE'][module]) :
         for used_module in build['SOURCE'][module]['USES'] :
-            mod_inc = mod_inc + get_includes(build,section,used_module,include_uses=False,system=system,debug=debug)
-            mod_inc = mod_inc + [join_path(get_src_tuple(build,section,used_module,"",debug)[1],
+            mod_inc = mod_inc + get_includes(build,section,used_module,include_uses=False,system=system,buildtype=buildtype)
+            mod_inc = mod_inc + [join_path(get_src_tuple(build,section,used_module,"",buildtype)[1],
                                 get_base_dir(build,section,used_module))]
 
     return mod_inc
 
-def add_option(option, group, current_option):
+def add_option(option, group, buildtype, current_option, prefix="", postfix=""):
     if option in group:
-        current_option += group[option]
+        current_option += [prefix + s + postfix for s in group[option]]
+    if option+':'+buildtype in group:
+        current_option += [prefix + s + postfix for s in group[option+':'+buildtype]]
     return current_option
 
+# Check if a tool name is part of the tool option found.
+def tool_compare(tool, toolopt):
+    # Literal Name
+    if tool == toolopt:
+        return True
+    # At the begining of a list of tools.
+    if toolopt.startswith(tool+':'):
+        return True
+    # At the end of a list of tools.
+    if toolopt.endswith(':'+tool):
+        return True
+    # In the middle of a list of tools.
+    return ':'+tool+':' in toolopt
+
 # Generic Option Collector for GCC and G++
-def get_gcc_opt(build,section,module,tool,arch,core,src,debug=False):
+def get_gcc_opt(build,section,module,tool,arch,core,src,buildtype):
     gcc_opt = []
 
-    if tool in build['OPTS']:
-        gcc_opt = add_option('WARN',build['OPTS'][tool],gcc_opt)
+    for toolopt in build['OPTS']:
+        if tool_compare(tool, toolopt):
+            gcc_opt = add_option('WARN'   ,build['OPTS'][toolopt],buildtype,gcc_opt)
+            gcc_opt = add_option('CFLAGS' ,build['OPTS'][toolopt],buildtype,gcc_opt)
+            gcc_opt = add_option('DEFINES',build['OPTS'][toolopt],buildtype,gcc_opt,prefix="-D")
 
-        if (arch in build['OPTS'][tool]):
-            gcc_opt = add_option('CFLAGS',build['OPTS'][tool][arch],gcc_opt)
-            gcc_opt = add_option(core,build['OPTS'][tool][arch],gcc_opt)
-            if debug:
-                gcc_opt = add_option('DEBUG_CFLAGS',build['OPTS'][tool][arch],gcc_opt)
+            if (arch in build['OPTS'][tool]):
+                gcc_opt = add_option('CFLAGS',build['OPTS'][toolopt][arch],buildtype,gcc_opt)
+                gcc_opt = add_option(core,build['OPTS'][toolopt][arch],buildtype,gcc_opt)
             else:
-                gcc_opt = add_option('NONDEBUG_CFLAGS',build['OPTS'][tool][arch],gcc_opt)
-        else:
-            print "WARNING: Unknown GCC %s Compiler: %s, can not properly compile: %s [%s]" % (arch, cpu, src[0], module)
+                print ("WARNING: Unknown GCC %s Compiler: %s, can not properly compile: %s [%s]" % (arch, core, src[0], module))
 
-        if debug:
-            gcc_opt = add_option('DEBUG_CFLAGS',build['OPTS'][tool],gcc_opt)
-        else:
-            gcc_opt = add_option('CFLAGS',build['OPTS'][tool],gcc_opt)
-
-    gcc_opt = add_option(tool+'_FLAGS',build[section][module],gcc_opt)
-    gcc_opt = add_option(tool+'_DEFS',build[section][module],gcc_opt)
+    gcc_opt = add_option('DEFINES',build[section][module],buildtype,gcc_opt,prefix="-D")
 
     # Also get any DEFINES from Used Libraries and Modules
     if ('USES' in build[section][module]) :
         for used_module in build[section][module]['USES'] :
-            gcc_opt = add_option(tool+'_DEFS',build[section][used_module],gcc_opt)
+            gcc_opt = add_option('DEFINES',build[section][used_module],buildtype,gcc_opt,prefix="-D")
 
     return gcc_opt
+
+def get_ld_opt(build,section,module,tool,arch,core,src,buildtype):
+    ld_opt = []
+
+    for toolopt in build['OPTS']:
+        if tool_compare(tool, toolopt):
+            ld_opt = add_option('LDFLAGS',build['OPTS'][toolopt],buildtype,ld_opt)
+
+            if (arch in build['OPTS'][tool]):
+                ld_opt = add_option('LDFLAGS',build['OPTS'][toolopt][arch],buildtype,ld_opt)
+
+    return ld_opt
+
+# file finder, makes adding multiple files easier.
+def all_files_in(basedir, ext, recursive=False):
+    if recursive:
+        globpath = os.path.join(basedir, '**', '*'+ext)
+    else:
+        globpath = os.path.join(basedir, '*'+ext)
+    files = []
+    for filename in glob.iglob(globpath, recursive=True):
+        files.append(filename)
+
+    return files
+
+# directory finder, finds all directories holding files with an extension.
+def all_directories_of(basedir, ext):
+    globpath = os.path.join(basedir, '**', '*'+ext)
+
+    files = []
+    for filename in glob.iglob(globpath, recursive=True):
+        filepath = Path(filename)
+        basedir = str(filepath.parent)
+        if basedir not in files:
+            files.append(basedir)
+
+    return files
+
+# Make sure the Build Types have a unique path
+def validate_build_types ( buildtypes ):
+    paths = []
+    for key,value in buildtypes.items():
+        if value not in paths:
+            paths.append(value)
+        else:
+            print ("ERROR: BUILD \"%s\" does not have a unique path (%s).  Can not continue." % (key,value))
+            exit(1)
+    return True
+        
+
