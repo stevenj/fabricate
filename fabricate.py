@@ -924,8 +924,7 @@ def _results_handler( builder, delay=0.01):
                         except ExecutionError as e:
                             r.results = e
                             _groups.set_ok(id, False)
-                            message, data, status = e
-                            printerr("fabricate: " + message)
+                            printerr("fabricate ExecutionError: " + e.args[0])
                         else:
                             builder.done(r.command, d, o) # save deps
                             r.results = (r.command, d, o)
@@ -1198,8 +1197,7 @@ class Builder(object):
             self.run(args, **kwargs)
             return 0
         except ExecutionError as exc:
-            message, data, status = exc
-            return status
+            return exc.args[2]
 
     def outofdate(self, func):
         """ Return True if given build function is out of date. """
@@ -1388,7 +1386,8 @@ def setup(builder=None, default=None, **kwargs):
     _setup_builder = builder
     _setup_default = default
     _setup_kwargs = kwargs
-setup.__doc__ += '\n\n' + Builder.__init__.__doc__
+setup.__doc__ += '\n\n' + Builder.__init__.__doc__ # pylint: disable=no-member
+
 
 def _set_default_builder():
     """ Set default builder to Builder() instance if it's not yet set. """
@@ -1597,8 +1596,7 @@ def main(globals_dict=None, build_dir=None, extra_options=None, builder=None,
                 sys.exit(1)
         after() # wait till the build commands are finished
     except ExecutionError as exc:
-        message, data, status = exc.args
-        printerr('fabricate: ' + message)
+        printerr('fabricate: ' + exc.args[0])
     finally:
         _stop_results.set() # stop the results gatherer so I don't hang
         if not options.quiet and os.path.abspath(build_dir) != original_path:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Utility opertations for the Fabricate build tool.
+"""Utility operations for the Fabricate build tool.
 
 fabricate is a build tool that finds dependencies automatically for any
 language. It's small and just works. No hidden stuff behind your back. It was
@@ -19,7 +19,7 @@ import re
 import glob
 from pathlib import Path
 
-from fabricate import *
+from . import fabricate as FAB
 
 # Function to flatten an array of arrays to make it easy to generate lists of options.
 FLATTEN = lambda z: [x for y in z for x in y]
@@ -29,7 +29,7 @@ FLATTEN = lambda z: [x for y in z for x in y]
 INTERLEAVE = lambda y,z: FLATTEN([[y, x] for x in z])
 
 def FILTER(array, excludes):
-    """ Take an array of items, and remove all occurences of anything in
+    """ Take an array of items, and remove all occurrences of anything in
     the exclude array that is found in it.
     Then return the filtered array
     """
@@ -58,7 +58,7 @@ def get_flag(FLAGS, PATH):
 # Recursively iterate through a dictionary defining compiler flags and
 # return the set of flags for a particular TOOL, TYPE and DEVICE
 def get_flags(FLAGS, TOOL):
-    # TOOL is a tupple of:
+    # TOOL is a tuple of:
     #  (TOOL, TYPE, DEVICE), eg.
     #  ("GCC", "DEBUG", "SAML21G18B")
 
@@ -92,7 +92,7 @@ def _mkdir_recursive(path):
     if not os.path.exists(path):
         if sys.platform.startswith('linux'):
             # Linux-specific code here...
-            run("mkdir", "-p", path)
+            FAB.run("mkdir", "-p", path)
         else:
             # If building on anything other than linux,
             # this should work, but clean wont remove the
