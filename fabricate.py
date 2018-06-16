@@ -992,7 +992,7 @@ class Builder(object):
     def __init__(self, runner=None, dirs=None, dirdepth=100, ignoreprefix='.',
                  ignore=None, hasher=md5_hasher, depsname='.deps',
                  quiet=False, debug=False, inputs_only=False, parallel_ok=False):
-        """ Initialise a Builder with the given options.
+        r""" Initialise a Builder with the given options.
 
         "runner" specifies how programs should be run.  It is either a
             callable compatible with the Runner class, or a string selecting
