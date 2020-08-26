@@ -1,9 +1,8 @@
-# fabricate #
+# fabricate3
 
-[![Build
-Status](https://travis-ci.org/SimonAlfie/fabricate.svg?branch=master)](https://travis-ci.org/chriscz/fabricate)
+**fabricate3** is a build tool that finds dependencies automatically for any language. It's small and just works. No hidden stuff behind your back. It was inspired by Bill McCloskey's make replacement, memoize, and is decended from Brush Technologies fabricate.   Fabricate3 may be compatible with fabricate but that is not a design goal.  Fabricate3 is designed to work on python 3.8+ and has no support for python 2. Rather than having any "gotchas" and unlike fabricate, windows is unsupported.
 
-**fabricate** is a build tool that finds dependencies automatically for any language. It's small and just works. No hidden stuff behind your back. It was inspired by Bill McCloskey's make replacement, memoize, but fabricate works on [Windows](https://github.com/SimonAlfie/fabricate/wiki/HowItWorks#windows-issues) as well as Linux.
+## Following is the original fabricate documentation:
 
 [Get fabricate.py now](https://raw.githubusercontent.com/SimonAlfie/fabricate/master/fabricate.py), learn [how it works](https://github.com/SimonAlfie/fabricate/wiki/HowItWorks), see how to get [in-Python help](https://github.com/SimonAlfie/fabricate/wiki/Help), or discuss it on the [mailing list](http://groups.google.com/group/fabricate-users).
 
